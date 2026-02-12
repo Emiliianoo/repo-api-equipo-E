@@ -1,0 +1,19 @@
+[project]
+name = "repo-api-equipo-e"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Emiliano",email = "133832748+Emiliianoo@users.noreply.github.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard] (>=0.129.0,<0.130.0)"
+]
+
+[tool.poetry]
+packages = [{include = "repo_api_equipo_e", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
