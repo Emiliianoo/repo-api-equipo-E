@@ -34,3 +34,15 @@ def get_products():
     )
 
     return products
+
+@app.get("/api/suppliers")
+def get_providers():
+    uid, models = connect_odoo()
+
+    suppliers = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "res.partner", "search_read",
+        [[("supplier_rank", ">", 0)]],
+        {"fields": ["id", "name", "active", "contact_address", "email", "is_company", "display_name"]}
+    )
+    return suppliers
