@@ -21,3 +21,16 @@ def connect_odoo():
 
     models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
     return uid, models
+
+@app.get("/api/products")
+def get_products():
+    uid, models = connect_odoo()
+
+    products = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "product.product", "search_read",
+        [[]],
+        {"fields": ["id", "name", "default_code", "list_price"]}
+    )
+
+    return products
