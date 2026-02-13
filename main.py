@@ -46,3 +46,8 @@ def get_providers():
         {"fields": ["id", "name", "active", "contact_address", "email", "is_company", "display_name"]}
     )
     return suppliers
+
+@app.get("/api/productStock")
+def get_product_stock():
+    productStock = 0
+    return productStock
