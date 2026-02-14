@@ -48,6 +48,14 @@ def get_providers():
     return suppliers
 
 @app.get("/api/productStock")
-def get_product_stock():
-    productStock = 0
-    return productStock
+def get_product_stock():    
+    uid, models = connect_odoo()
+
+    stock_quant = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "stock.quant", "search_read",
+        [[]],
+        {"fields": ["id", "product_id", "location_id", "quantity"]}
+    )
+
+    return stock_quant
