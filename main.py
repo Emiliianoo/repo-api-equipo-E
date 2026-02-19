@@ -59,3 +59,16 @@ def get_product_stock():
     )
 
     return stock_quant
+
+@app.get("/api/productCategories")
+def get_product_categories():
+    uid, models = connect_odoo()
+
+    categories = models.execute_kw(
+        ODOO_DB, uid, ODOO_PASSWORD,
+        "product.category", "search_read",
+        [[]],
+        {"fields": ["id", "name", "display_name"]}
+    )
+
+    return categories
