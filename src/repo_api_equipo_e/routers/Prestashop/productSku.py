@@ -1,6 +1,6 @@
 import os
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 router = APIRouter()
 
@@ -12,7 +12,16 @@ API_KEY = os.getenv("PRESTASHOP_API_KEY", "")
 async def get_product_by_sku(sku: str):
 
     if not BASE_URL or not API_KEY:
-        raise HTTPException(500, "PrestaShop no configurado")
+        return {
+            "status": "error",
+            "data": None,
+            "errors": [
+                {
+                    "code": "500",
+                    "message": "PrestaShop no configurado"
+                }
+            ]
+        }
 
     async with httpx.AsyncClient() as client:
         r = await client.get(
@@ -26,12 +35,39 @@ async def get_product_by_sku(sku: str):
         )
 
     if r.status_code != 200:
-        raise HTTPException(502, "Error en PrestaShop")
-
+        return {
+            "status": "error",
+            "data": None,
+            "errors": [
+                {
+                    "code": str(r.status_code),
+                    "message": "Error al consultar PrestaShop"
+                }
+            ]
+        }
+    
     data = r.json()
 
-    products = data.get("products", [])
-    if not products:
-        raise HTTPException(404, "Producto no encontrado")
+    if isinstance(data, list):
+        products = data
+    else:
+        products = data.get("products", [])
 
-    return products[0]
+    if not products:
+        return {
+            "status": "error",
+            "data": None,
+            "errors": [
+                {
+                    "code": "404",
+                    "message": "Producto no encontrado"
+                }
+            ]
+        }
+
+    # SUCCESS
+    return {
+        "status": "success",
+        "data": products[0],
+        "errors": []
+    }
