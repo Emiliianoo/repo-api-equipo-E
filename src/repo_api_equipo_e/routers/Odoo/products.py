@@ -3,7 +3,7 @@ from repo_api_equipo_e.odoo import connect_odoo
 
 router = APIRouter()
 
-@router.get("/api/products")
+@router.get("/products")
 def get_products():
     uid, models, db, password = connect_odoo()
 
