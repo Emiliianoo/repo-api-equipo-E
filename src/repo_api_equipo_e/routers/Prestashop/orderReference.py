@@ -1,17 +1,27 @@
 import os
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 router = APIRouter()
 
 BASE_URL = os.getenv("PRESTASHOP_BASE_URL", "").rstrip("/")
 API_KEY = os.getenv("PRESTASHOP_API_KEY", "")
 
+
 @router.get("/order/{reference}")
 async def get_order_by_reference(reference: str):
 
     if not BASE_URL or not API_KEY:
-        raise HTTPException(500, "PrestaShop no configurado")
+        return {
+            "status": "error",
+            "data": None,
+            "errors": [
+                {
+                    "code": "500",
+                    "message": "PrestaShop no configurado"
+                }
+            ]
+        }
 
     async with httpx.AsyncClient() as client:
         r = await client.get(
@@ -25,12 +35,38 @@ async def get_order_by_reference(reference: str):
         )
 
     if r.status_code != 200:
-        raise HTTPException(502, "Error en PrestaShop")
-
+        return {
+            "status": "error",
+            "data": None,
+            "errors": [
+                {
+                    "code": str(r.status_code),
+                    "message": "Error al consultar PrestaShop"
+                }
+            ]
+        }
+    
     data = r.json()
 
-    orders = data.get("orders", [])
-    if not orders:
-        raise HTTPException(404, "Orden no encontrada")
+    if isinstance(data, list):
+        orders = data
+    else:
+        orders = data.get("orders", [])
 
-    return orders[0]
+    if not orders:
+        return {
+            "status": "error",
+            "data": None,
+            "errors": [
+                {
+                    "code": "404",
+                    "message": "Orden no encontrada"
+                }
+            ]
+        }
+
+    return {
+        "status": "success",
+        "data": orders[0],
+        "errors": []
+    }
