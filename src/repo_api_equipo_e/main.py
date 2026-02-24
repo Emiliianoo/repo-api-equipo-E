@@ -1,9 +1,6 @@
 from fastapi import FastAPI
-from repo_api_equipo_e.routers import products, suppliers, stock, productsCategories
+from repo_api_equipo_e.routers.api import router as api_router
 
 app = FastAPI()
 
-app.include_router(products.router)
-app.include_router(suppliers.router)
-app.include_router(stock.router)
-app.include_router(productsCategories.router)
+app.include_router(api_router)
