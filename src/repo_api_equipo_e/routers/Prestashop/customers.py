@@ -6,8 +6,8 @@ from fastapi import APIRouter
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-BASE_URL = os.getenv("PRESTASHOP_BASE_URL").rstrip("/")
-API_KEY = os.getenv("PRESTASHOP_API_KEY")
+BASE_URL = os.getenv("PRESTASHOP_BASE_URL", "").rstrip("/")
+API_KEY = os.getenv("PRESTASHOP_API_KEY", "")
 
 
 @router.get("/customers")
