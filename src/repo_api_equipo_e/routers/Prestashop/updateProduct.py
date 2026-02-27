@@ -1,7 +1,6 @@
 import os
 import re
 import httpx
-import xml.etree.ElementTree as ET
 from fastapi import APIRouter
 from repo_api_equipo_e.odoo import connect_odoo
 
@@ -18,23 +17,6 @@ def get_odoo_products(reference):
         "product.product", "search_read",
         [[("default_code", "=", reference)]],
         {"fields": ["id", "name", "default_code", "list_price", "qty_available"]}
-    )
-
-def get_all_odoo_products():
-    uid, models, db, password = connect_odoo()
-    return models.execute_kw(
-        db, uid, password,
-        "product.product", "search_read",
-        [[]],
-        {"fields": ["id", "name", "default_code", "list_price", "qty_available"]}
-    )
-
-def update_odoo_product(product_id, data):
-    uid, models, db, password = connect_odoo()
-    return models.execute_kw(
-        db, uid, password,
-        "product.product", "write",
-        [[product_id], data]
     )
 
 # ---------- XML helpers ----------
@@ -54,51 +36,6 @@ async def get_product_id_by_reference(client, sku):
         headers={"Accept": "application/xml"},
     )
     return _first_id(r.text) if r.status_code == 200 else None
-
-async def get_all_prestashop_products(client):
-    """Obtiene todos los productos de PrestaShop con referencia"""
-    r = await client.get(
-        f"{BASE_URL}/api/products",
-        params={"ws_key": API_KEY, "display": "full"},
-        headers={"Accept": "application/xml"},
-    )
-    if r.status_code != 200:
-        return []
-    
-    products = []
-    # Buscar todos los <product> en el XML
-    try:
-        root = ET.fromstring(r.text)
-        for product_elem in root.findall("product"):
-            product_id = product_elem.findtext("id")
-            reference = product_elem.findtext("reference")
-            price = product_elem.findtext("price")
-            name = product_elem.findtext("name/language")
-            
-            if product_id and reference:
-                products.append({
-                    "id": product_id,
-                    "reference": reference,
-                    "price": float(price or 0),
-                    "name": name or "",
-                })
-    except Exception as e:
-        print(f"Error parsing Prestashop products: {e}")
-    
-    return products
-
-async def get_prestashop_stock(client, product_id):
-    """Obtiene el stock de un producto en PrestaShop"""
-    r = await client.get(
-        f"{BASE_URL}/api/stock_availables",
-        params={"ws_key": API_KEY, "filter[id_product]": f"[{product_id}]", "display": "full"},
-        headers={"Accept": "application/xml"},
-    )
-    if r.status_code != 200:
-        return 0
-    
-    stock_qty = _tag(r.text, "quantity")
-    return float(stock_qty or 0)
 
 async def create_product(client, name, sku, price):
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -195,222 +132,60 @@ async def import_product_from_odoo(reference):
 
     results = get_odoo_products(reference)
     if not results:
-        return {"status": "error", "message": "Referencia no encontrada en Odoo"}
+      return {"status": "error", "message": "Referencia no encontrada en Odoo"}
     product = results[0]
 
     async with httpx.AsyncClient(timeout=40) as client:
-        sku = (product.get("default_code") or "").strip()
-        name = (product.get("name") or "").strip()
-        price = float(product.get("list_price") or 0)
-        stock = float(product.get("qty_available") or 0)
+      sku = (product.get("default_code") or "").strip()
+      name = (product.get("name") or "").strip()
+      price = float(product.get("list_price") or 0)
+      stock = float(product.get("qty_available") or 0)
 
-        # NO crear si precio=0 Y stock=0
-        if price == 0 and stock == 0:
-            return {"status": "skipped",
-                    "message": "Precio y stock en cero"}
+      # NO crear si precio=0 Y stock=0
+      if price == 0 and stock == 0:
+        return{"status": "skipped",
+               "message": "Precio y stock en cero"}
 
-        # buscar por reference
+      # buscar por reference
+      product_id = await get_product_id_by_reference(client, sku)
+      action_taken = "actualizado" if product_id else "creado"
+
+      # Si no existe, crear
+      if not product_id:
+        rc = await create_product(client, name, sku, price)
+        if rc.status_code not in (200, 201):
+          return {"status": "error", "message": "Error al crear el producto en PrestaShop"}
         product_id = await get_product_id_by_reference(client, sku)
-        action_taken = "actualizado" if product_id else "creado"
-
-        # Si no existe, crear
         if not product_id:
-            rc = await create_product(client, name, sku, price)
-            if rc.status_code not in (200, 201):
-                return {"status": "error", "message": "Error al crear el producto en PrestaShop"}
-            product_id = await get_product_id_by_reference(client, sku)
-            if not product_id:
-                return {"status": "error", "message": "Producto creado pero no se pudo recuperar el ID"}
+          return {"status": "error", "message": "Producto creado pero no se pudo recuperar el ID"}
 
-        # Stock: GET stock_available (se crea automáticamente)
-        stock_xml = await get_stock_available_full_by_product(client, product_id)
-        if not stock_xml:
-            return {"status": "skipped",
-                    "message": "No se encontró el registro de inventario"}
+      # Stock: GET stock_available (se crea automáticamente)
+      stock_xml = await get_stock_available_full_by_product(client, product_id)
+      if not stock_xml:
+        return{"status": "skipped",
+               "message": "No se encontró el registro de inventario"}
 
-        info = parse_stock_info(stock_xml)
-        if not info["id"]:
-            return {"status": "skipped",
-                    "message": "ID de inventario no válido"}
 
-        # PATCH quantity. Si falla, fallback a PUT completo.
-        rs = await patch_stock_quantity(client, info["id"], stock)
-        if rs.status_code not in (200, 201):
-            rs2 = await put_stock_full(client, info, stock)
-            if rs2.status_code not in (200, 201):
-                return {"status": "error", "message": "No se pudo actualizar la cantidad de stock"}
-        
-        return {
-            "status": "success",
-            "message": f"Producto {action_taken} correctamente",
-            "data": {
-                "id_prestashop": product_id,
-                "referencia": sku,
-                "nombre": name,
-                "precio": price,
-                "stock_sincronizado": stock
-            }
+      info = parse_stock_info(stock_xml)
+      if not info["id"]:
+        return{"status": "skipped",
+               "message": "ID de inventario no válido"}
+
+      # PATCH quantity. Si falla, fallback a PUT completo.
+      rs = await patch_stock_quantity(client, info["id"], stock)
+      if rs.status_code not in (200, 201):
+        rs2 = await put_stock_full(client, info, stock)
+        if rs2.status_code not in (200, 201):
+          return {"status": "error", "message": "No se pudo actualizar la cantidad de stock"}
+
+    return {
+        "status":"success",
+        "message": f"Producto {action_taken} correctamente",
+        "data":{
+            "id_prestashop": product_id,
+            "referencia": sku,
+            "nombre": name,
+            "precio": price,
+            "stock_sincronizado": stock
         }
-
-# ---------- SINCRONIZACIÓN PRESTASHOP -> ODOO ----------
-@router.get("/sync/prestashop-to-odoo")
-async def sync_prestashop_to_odoo():
-    """
-    Verifica cambios en PrestaShop y los actualiza en Odoo
-    Compara precios y cantidades
-    """
-    if not BASE_URL or not API_KEY:
-        return {"status": "error", "data": None, "errors": [{"code": "500", "message": "PrestaShop no configurado"}]}
-    
-    try:
-        # Obtener productos de Odoo
-        odoo_products = get_all_odoo_products()
-        odoo_by_ref = {p.get("default_code"): p for p in odoo_products if p.get("default_code")}
-        
-        # Obtener productos de PrestaShop
-        async with httpx.AsyncClient(timeout=40) as client:
-            prestashop_products = await get_all_prestashop_products(client)
-            
-            updates_made = []
-            errors = []
-            
-            for ps_product in prestashop_products:
-                reference = ps_product["reference"]
-                
-                # Buscar producto en Odoo por referencia
-                if reference not in odoo_by_ref:
-                    continue
-                
-                odoo_product = odoo_by_ref[reference]
-                odoo_id = odoo_product["id"]
-                
-                # Obtener stock en PrestaShop
-                ps_stock = await get_prestashop_stock(client, ps_product["id"])
-                
-                changes = {}
-                
-                # Comparar precio
-                if ps_product["price"] != odoo_product.get("list_price", 0):
-                    changes["list_price"] = ps_product["price"]
-                
-                # Comparar stock
-                if ps_stock != odoo_product.get("qty_available", 0):
-                    changes["qty_available"] = ps_stock
-                
-                # Si hay cambios, actualizar Odoo
-                if changes:
-                    try:
-                        update_odoo_product(odoo_id, changes)
-                        updates_made.append({
-                            "reference": reference,
-                            "odoo_id": odoo_id,
-                            "changes": changes
-                        })
-                    except Exception as e:
-                        errors.append({
-                            "reference": reference,
-                            "error": str(e)
-                        })
-        
-        return {
-            "status": "success",
-            "message": f"Sincronización completada",
-            "data": {
-                "updates_made": len(updates_made),
-                "errors_count": len(errors),
-                "updates": updates_made,
-                "errors": errors
-            }
-        }
-    
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error en sincronización: {str(e)}",
-            "data": None
-        }
-
-@router.get("/sync/prestashop-to-odoo/{reference}")
-async def sync_prestashop_product_to_odoo(reference):
-    """
-    Sincroniza un producto específico de PrestaShop a Odoo
-    """
-    if not BASE_URL or not API_KEY:
-        return {"status": "error", "data": None, "errors": [{"code": "500", "message": "PrestaShop no configurado"}]}
-    
-    try:
-        # Obtener producto de Odoo
-        odoo_products = get_odoo_products(reference)
-        if not odoo_products:
-            return {"status": "error", "message": f"Producto con referencia {reference} no encontrado en Odoo"}
-        
-        odoo_product = odoo_products[0]
-        odoo_id = odoo_product["id"]
-        
-        async with httpx.AsyncClient(timeout=40) as client:
-            # Obtener producto de PrestaShop
-            product_id = await get_product_id_by_reference(client, reference)
-            if not product_id:
-                return {"status": "error", "message": f"Producto con referencia {reference} no encontrado en PrestaShop"}
-            
-            # Obtener detalles del producto PrestaShop
-            ps_products = await get_all_prestashop_products(client)
-            ps_product = next((p for p in ps_products if p["id"] == product_id), None)
-            
-            if not ps_product:
-                return {"status": "error", "message": "No se pudieron obtener detalles del producto PrestaShop"}
-            
-            # Obtener stock
-            ps_stock = await get_prestashop_stock(client, product_id)
-            
-            changes = {}
-            
-            # Comparar precio
-            if ps_product["price"] != odoo_product.get("list_price", 0):
-                changes["list_price"] = ps_product["price"]
-            
-            # Comparar stock
-            if ps_stock != odoo_product.get("qty_available", 0):
-                changes["qty_available"] = ps_stock
-            
-            if not changes:
-                return {
-                    "status": "skipped",
-                    "message": "No hay cambios para sincronizar",
-                    "data": {
-                        "reference": reference,
-                        "prestashop_price": ps_product["price"],
-                        "odoo_price": odoo_product.get("list_price", 0),
-                        "prestashop_stock": ps_stock,
-                        "odoo_stock": odoo_product.get("qty_available", 0)
-                    }
-                }
-            
-            # Actualizar Odoo
-            update_odoo_product(odoo_id, changes)
-            
-            return {
-                "status": "success",
-                "message": f"Producto {reference} sincronizado correctamente",
-                "data": {
-                    "reference": reference,
-                    "odoo_id": odoo_id,
-                    "changes": changes,
-                    "previous_values": {
-                        "list_price": odoo_product.get("list_price", 0),
-                        "qty_available": odoo_product.get("qty_available", 0)
-                    },
-                    "new_values": {
-                        "list_price": changes.get("list_price", odoo_product.get("list_price", 0)),
-                        "qty_available": changes.get("qty_available", odoo_product.get("qty_available", 0))
-                    }
-                }
-            }
-    
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error en sincronización: {str(e)}",
-            "data": None
-        }
-
+    }
