@@ -125,7 +125,7 @@ async def put_stock_full(client, info, qty):
     )
 
 # ---------- ENDPOINT PRINCIPAL ----------
-@router.get("/products/from-odoo/{reference}")
+@router.get("/update_products/from-odoo/{reference}")
 async def import_product_from_odoo(reference):
     if not BASE_URL or not API_KEY:
         return {"status":"error","data":None,"errors":[{"code":"500","message":"PrestaShop no configurado"}]}
@@ -152,12 +152,7 @@ async def import_product_from_odoo(reference):
 
       # Si no existe, crear
       if not product_id:
-        rc = await create_product(client, name, sku, price)
-        if rc.status_code not in (200, 201):
-          return {"status": "error", "message": "Error al crear el producto en PrestaShop"}
-        product_id = await get_product_id_by_reference(client, sku)
-        if not product_id:
-          return {"status": "error", "message": "Producto creado pero no se pudo recuperar el ID"}
+         return("El producto no existe en PrestaShop, asegurate de crearlo antes de intentar actualizarlo")
 
       # Stock: GET stock_available (se crea automáticamente)
       stock_xml = await get_stock_available_full_by_product(client, product_id)
