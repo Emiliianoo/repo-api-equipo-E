@@ -2,8 +2,7 @@ import os
 import re
 import httpx
 from fastapi import APIRouter
-from ...odoo import connect_odoo
-
+from repo_api_equipo_e.odoo import connect_odoo
 
 router = APIRouter()
 
@@ -144,7 +143,7 @@ async def import_product_from_odoo(reference):
 
       # NO crear si precio=0 Y stock=0
       if price == 0 and stock == 0:
-        return {"status": "skipped",
+        return{"status": "skipped",
                "message": "Precio y stock en cero"}
 
       # buscar por reference
@@ -163,13 +162,13 @@ async def import_product_from_odoo(reference):
       # Stock: GET stock_available (se crea automáticamente)
       stock_xml = await get_stock_available_full_by_product(client, product_id)
       if not stock_xml:
-        return {"status": "skipped",
+        return{"status": "skipped",
                "message": "No se encontró el registro de inventario"}
 
 
       info = parse_stock_info(stock_xml)
       if not info["id"]:
-        return {"status": "skipped",
+        return{"status": "skipped",
                "message": "ID de inventario no válido"}
 
       # PATCH quantity. Si falla, fallback a PUT completo.
