@@ -152,10 +152,10 @@ async def import_product_from_odoo(reference):
 
       # Si no existe, crear
       if not product_id:
-         return(
+         return{
             "status": "skipped",
             "message": "Producto no encontrado en PrestaShop. La creación de productos nuevos está deshabilitada para evitar inconsistencias. Por favor, cree el producto manualmente en PrestaShop y luego vuelva a intentar esta operación para sincronizar el stock y precio." 
-         )
+         }
 
       # Stock: GET stock_available (se crea automáticamente)
       stock_xml = await get_stock_available_full_by_product(client, product_id)
