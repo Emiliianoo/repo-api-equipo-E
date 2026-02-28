@@ -10,12 +10,12 @@ BASE_URL = os.getenv("PRESTASHOP_BASE_URL", "").rstrip("/")
 API_KEY = os.getenv("PRESTASHOP_API_KEY", "")
 
 # ---------- ODOO ----------
-def get_odoo_products():
+def get_odoo_products(reference):
     uid, models, db, password = connect_odoo()
     return models.execute_kw(
         db, uid, password,
         "product.product", "search_read",
-        [[]],
+        [[("default_code", "=", reference)]],
         {"fields": ["id", "name", "default_code", "list_price", "qty_available"]}
     )
 
@@ -87,7 +87,7 @@ def parse_stock_info(stock_xml: str):
         "id_product": _tag(stock_xml, "id_product"),
         "id_product_attribute": _tag(stock_xml, "id_product_attribute") or "0",
         "id_shop": _tag(stock_xml, "id_shop") or "1",
-        "id_shop_group": _tag(stock_xml, "id_shop_group") or "0",  # 👈 en tu doc es 0
+        "id_shop_group": _tag(stock_xml, "id_shop_group") or "0",
         "depends_on_stock": _tag(stock_xml, "depends_on_stock") or "0",
         "out_of_stock": _tag(stock_xml, "out_of_stock") or "2",
     }
@@ -125,74 +125,67 @@ async def put_stock_full(client, info, qty):
     )
 
 # ---------- ENDPOINT PRINCIPAL ----------
-@router.get("/products/from-odoo/bulk")
-async def import_products_from_odoo():
-
+@router.get("/products/from-odoo/{reference}")
+async def import_product_from_odoo(reference):
     if not BASE_URL or not API_KEY:
         return {"status":"error","data":None,"errors":[{"code":"500","message":"PrestaShop no configurado"}]}
 
-    created, updated, skipped_price_stock_0, create_errors, stock_errors = [], [], [], [], []
-    products = get_odoo_products()
+    results = get_odoo_products(reference)
+    if not results:
+      return {"status": "error", "message": "Referencia no encontrada en Odoo"}
+    product = results[0]
 
     async with httpx.AsyncClient(timeout=40) as client:
-        for p in products:
-            sku = (p.get("default_code") or "").strip()
-            name = (p.get("name") or "").strip()
-            price = float(p.get("list_price") or 0)
-            stock = float(p.get("qty_available") or 0)
+      sku = (product.get("default_code") or "").strip()
+      name = (product.get("name") or "").strip()
+      price = float(product.get("list_price") or 0)
+      stock = float(product.get("qty_available") or 0)
 
-            if not sku:
-                create_errors.append(p.get("id"))
-                continue
+      # NO crear si precio=0 Y stock=0
+      if price == 0 and stock == 0:
+        return{"status": "skipped",
+               "message": "Precio y stock en cero"}
 
-            # NO crear si precio=0 Y stock=0
-            if price == 0 and stock == 0:
-                skipped_price_stock_0.append(sku)
-                continue
+      # buscar por reference
+      product_id = await get_product_id_by_reference(client, sku)
+      action_taken = "actualizado" if product_id else "creado"
 
-            # buscar por reference
-            product_id = await get_product_id_by_reference(client, sku)
+      # Si no existe, crear
+      if not product_id:
+        rc = await create_product(client, name, sku, price)
+        if rc.status_code not in (200, 201):
+          return {"status": "error", "message": "Error al crear el producto en PrestaShop"}
+        product_id = await get_product_id_by_reference(client, sku)
+        if not product_id:
+          return {"status": "error", "message": "Producto creado pero no se pudo recuperar el ID"}
 
-            # Si no existe, crear
-            if not product_id:
-                rc = await create_product(client, name, sku, price)
-                if rc.status_code not in (200, 201):
-                    create_errors.append(sku)
-                    continue
-                product_id = await get_product_id_by_reference(client, sku)
-                if not product_id:
-                    create_errors.append(sku)
-                    continue
-                created.append(sku)
-            else:
-                updated.append(sku)
+      # Stock: GET stock_available (se crea automáticamente)
+      stock_xml = await get_stock_available_full_by_product(client, product_id)
+      if not stock_xml:
+        return{"status": "skipped",
+               "message": "No se encontró el registro de inventario"}
 
-            # Stock: GET stock_available (se crea automáticamente)
-            stock_xml = await get_stock_available_full_by_product(client, product_id)
-            if not stock_xml:
-                stock_errors.append(sku)
-                continue
 
-            info = parse_stock_info(stock_xml)
-            if not info["id"]:
-                stock_errors.append(sku)
-                continue
+      info = parse_stock_info(stock_xml)
+      if not info["id"]:
+        return{"status": "skipped",
+               "message": "ID de inventario no válido"}
 
-            # PATCH quantity. Si falla, fallback a PUT completo.
-            rs = await patch_stock_quantity(client, info["id"], stock)
-            if rs.status_code not in (200, 201):
-                rs2 = await put_stock_full(client, info, stock)
-                if rs2.status_code not in (200, 201):
-                    stock_errors.append(sku)
+      # PATCH quantity. Si falla, fallback a PUT completo.
+      rs = await patch_stock_quantity(client, info["id"], stock)
+      if rs.status_code not in (200, 201):
+        rs2 = await put_stock_full(client, info, stock)
+        if rs2.status_code not in (200, 201):
+          return {"status": "error", "message": "No se pudo actualizar la cantidad de stock"}
 
     return {
         "status":"success",
+        "message": f"Producto {action_taken} correctamente",
         "data":{
-            "created": created,
-            "updated_existing": updated,
-            "skipped_price0_stock0": skipped_price_stock_0,
-            "create_errors": create_errors,
-            "stock_errors": stock_errors
-        },
-        "errors":[]
+            "id_prestashop": product_id,
+            "referencia": sku,
+            "nombre": name,
+            "precio": price,
+            "stock_sincronizado": stock
+        }
     }
