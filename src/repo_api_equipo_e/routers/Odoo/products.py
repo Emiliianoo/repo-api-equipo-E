@@ -6,7 +6,7 @@ router = APIRouter()
 @router.get("/products")
 def get_products():
     uid, models, db, password = connect_odoo()
-
+    
     products = models.execute_kw(
         db, uid, password,
         "product.product", "search_read",
