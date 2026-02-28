@@ -1,7 +1,5 @@
 from fastapi import APIRouter
-
-from repo_api_equipo_e.routers.Prestashop import updateProduct
-from . import productSku, orderReference, customers, suppliers, payments, orders, products
+from . import productSku, orderReference, customers, suppliers, payments, orders, products, bulkCreateFromOdoo, referenceCreateFromOdoo, updateProduct
 
 router = APIRouter(prefix="/prestashop", tags=["PrestaShop"])
 
@@ -13,3 +11,5 @@ router.include_router(payments.router)
 router.include_router(products.router)
 router.include_router(orders.router)
 router.include_router(updateProduct.router)
+router.include_router(bulkCreateFromOdoo.router)
+router.include_router(referenceCreateFromOdoo.router)
