@@ -1,6 +1,8 @@
+
 from urllib import response
 
 from fastapi import APIRouter, HTTPException
+from requests import models
 from repo_api_equipo_e.services.odoo import fetch_odoo_products
 from woocommerce import API
 import os
@@ -21,12 +23,17 @@ wcapi = API(
     
 @router.get("/products")
 def get_woo_product_by_sku():
-    response = wcapi.get("products")
+    
+    response = wcapi.get("products", params={"per_page": 10})
 
-    if response.status_code != 200:
-        raise Exception(
-            f"Error al buscar producto en WooCommerce: "
-            f"{response.status_code} - {response.text}"
-        )
+    if response.status_code == 200:
+        productos = response.json()
+        print(f"--- Se encontraron {len(productos)} productos ---")
+
+        for p in productos:
+            print(f"ID: {p['id']} | Nombre: {p['name']} | Precio: ${p['price']}")
+    else:
+        print(f"Error {response.status_code}: {response.text}")
+
 
     return response.json()
