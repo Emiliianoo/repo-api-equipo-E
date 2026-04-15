@@ -3,6 +3,7 @@ from repo_api_equipo_e.services.odoo import fetch_odoo_products
 from woocommerce import API
 import os
 from dotenv import load_dotenv
+from repo_api_equipo_e.services.woo import create_woo_product
 
 load_dotenv()
 
@@ -23,18 +24,6 @@ def get_woo_product_by_sku(sku: str):
     if response.status_code != 200:
         raise Exception(
             f"Error al buscar producto en WooCommerce: "
-            f"{response.status_code} - {response.text}"
-        )
-
-    return response.json()
-
-
-def create_woo_product(payload: dict):
-    response = wcapi.post("products", payload)
-
-    if response.status_code not in [200, 201]:
-        raise Exception(
-            f"Error al crear producto en WooCommerce: "
             f"{response.status_code} - {response.text}"
         )
 
