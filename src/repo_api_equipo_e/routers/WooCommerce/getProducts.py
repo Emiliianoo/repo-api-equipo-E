@@ -22,7 +22,7 @@ wcapi = API(
 
     
 @router.get("/products")
-def get_woo_product_by_sku():
+def get_woo_products():
     
     response = wcapi.get("products", params={"per_page": 10})
 

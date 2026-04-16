@@ -1,23 +1,20 @@
 from woocommerce import API
 import os
 from ..models.woo import RequestedOrder
+from dotenv import load_dotenv
 
-wcapi = None
+load_dotenv()
 
-def _get_wcapi():
-    global wcapi
-    if wcapi is None:
-        wcapi = API(
-            url=os.getenv("WORDPRESS_BASE_URL"),
-            consumer_key=os.getenv("WOOCOMMERCE_CONSUMER_KEY"),
-            consumer_secret=os.getenv("WOOCOMMERCE_CONSUMER_SECRET"),
-            version="wc/v3",
-            timeout=20
-        )
-    return wcapi
+wcapi = API(
+    url=os.getenv("WC_URL"),
+    consumer_key=os.getenv("WC_CONSUMER_KEY"),
+    consumer_secret=os.getenv("WC_CONSUMER_SECRET"),
+    version="wc/v3",
+    timeout=20
+)
 
 def create_woo_product(payload: dict):
-    response = _get_wcapi().post("products", payload)
+    response = wcapi.post("products", payload)
 
     if response.status_code not in [200, 201]:
         raise Exception(
@@ -29,7 +26,7 @@ def create_woo_product(payload: dict):
 
 def create_woo_order(order:RequestedOrder):
     payload = order.model_dump()
-    response = _get_wcapi().post("orders", payload)
+    response = wcapi.post("orders", payload)
 
     if response.status_code not in [200, 201]:
         raise Exception(
@@ -40,7 +37,7 @@ def create_woo_order(order:RequestedOrder):
 
 def get_woo_orders():
     try:
-        response = _get_wcapi().get("orders")
+        response = wcapi.get("orders")
         
         if response.status_code != 200:
             return {"error": f"{response.status_code}", "message": response.text}
