@@ -2,24 +2,27 @@ from fastapi import APIRouter, HTTPException
 from repo_api_equipo_e.services.odoo import fetch_odoo_products
 from woocommerce import API
 import os
-from dotenv import load_dotenv
 from repo_api_equipo_e.services.woo import create_woo_product
-
-load_dotenv()
 
 router = APIRouter()
 
-wcapi = API(
-    url=os.getenv("WC_URL"),
-    consumer_key=os.getenv("WC_CONSUMER_KEY"),
-    consumer_secret=os.getenv("WC_CONSUMER_SECRET"),
-    version="wc/v3",
-    timeout=20
-)
+wcapi = None
+
+def _get_wcapi():
+    global wcapi
+    if wcapi is None:
+        wcapi = API(
+            url=os.getenv("WORDPRESS_BASE_URL"),
+            consumer_key=os.getenv("WOOCOMMERCE_CONSUMER_KEY"),
+            consumer_secret=os.getenv("WOOCOMMERCE_CONSUMER_SECRET"),
+            version="wc/v3",
+            timeout=20
+        )
+    return wcapi
 
 
 def get_woo_product_by_sku(sku: str):
-    response = wcapi.get("products", params={"sku": sku})
+    response = _get_wcapi().get("products", params={"sku": sku})
 
     if response.status_code != 200:
         raise Exception(
