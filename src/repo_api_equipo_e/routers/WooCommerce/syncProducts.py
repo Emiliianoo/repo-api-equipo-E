@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException
 from repo_api_equipo_e.services.odoo import fetch_odoo_products
 from woocommerce import API
 import os
-from dotenv import load_dotenv
 from repo_api_equipo_e.services.woo import create_woo_product
+from dotenv import load_dotenv
 
 load_dotenv()
 

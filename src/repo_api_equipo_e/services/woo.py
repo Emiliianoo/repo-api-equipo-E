@@ -1,5 +1,9 @@
 from woocommerce import API
 import os
+from ..models.woo import RequestedOrder
+from dotenv import load_dotenv
+
+load_dotenv()
 
 wcapi = API(
     url=os.getenv("WC_URL"),
@@ -19,3 +23,25 @@ def create_woo_product(payload: dict):
         )
 
     return response.json()
+
+def create_woo_order(order:RequestedOrder):
+    payload = order.model_dump()
+    response = wcapi.post("orders", payload)
+
+    if response.status_code not in [200, 201]:
+        raise Exception(
+            f"Error al crear la orden en WooCommerce: "
+            f"{response.status_code} - {response.text}"
+        )
+    return response.json()
+
+def get_woo_orders():
+    try:
+        response = wcapi.get("orders")
+        
+        if response.status_code != 200:
+            return {"error": f"{response.status_code}", "message": response.text}
+        
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
